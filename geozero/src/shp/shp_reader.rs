@@ -73,7 +73,11 @@ fn read_shape_rec<P: GeomProcessor, T: Read>(
     record_size: usize,
 ) -> Result<(), Error> {
     let shape_type = ShapeType::read_from(&mut source)?;
-    let record_size = record_size - size_of::<i32>();
+    // The shape type is part of the record, so the remaining body is 4 bytes shorter.
+    // A record_size below that underflows (debug panic / release wrap to ~1.8e19).
+    let record_size = record_size
+        .checked_sub(size_of::<i32>())
+        .ok_or(Error::InvalidShapeRecordSize)?;
     match shape_type {
         ShapeType::Point => read_point(processor, &mut source, record_size, shape_type)?,
         ShapeType::PointM => read_point(processor, &mut source, record_size, shape_type)?,

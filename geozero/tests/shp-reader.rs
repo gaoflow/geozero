@@ -475,6 +475,18 @@ fn multipatch_huge_record_size_is_rejected_not_oom() {
 }
 
 #[test]
+fn record_size_below_shape_type_is_rejected_not_panicked() {
+    // record_size = 0 is non-negative but smaller than the 4-byte shape type it
+    // contains, so `record_size - size_of::<i32>()` underflowed (debug panic /
+    // release wrap to ~1.8e19).
+    let mut b = shp_main_header(500);
+    b.extend_from_slice(&1i32.to_be_bytes()); // record_number
+    b.extend_from_slice(&0i32.to_be_bytes()); // record_size = 0 (untrusted)
+    b.extend_from_slice(&1i32.to_le_bytes()); // shape_type = Point
+    assert_record_errors("record_size=0", b);
+}
+
+#[test]
 fn polygon_negative_num_points_is_rejected_not_panicked() {
     // num_points (LE i32) = -1 -> multipart_record_size(16 * -1) debug-mul-overflow /
     // read_xy Vec::with_capacity(~1.8e19) capacity overflow before the fix.
