@@ -288,7 +288,7 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-    use crate::shp::header::{HEADER_SIZE, SIZE_OF_SKIP, FILE_CODE, ShapeType};
+    use crate::shp::header::{FILE_CODE, HEADER_SIZE, SIZE_OF_SKIP, ShapeType};
     use crate::{ColumnValue, ProcessorSink, PropertyProcessor, error::GeozeroError};
 
     const POLY_SHP: &str = "./tests/data/shp/poly.shp";
