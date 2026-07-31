@@ -365,6 +365,19 @@ mod tests {
         drain(reader.iter_features(&mut sink).unwrap())
     }
 
+    /// A well-formed 100-byte main header with a caller-chosen `file_length`
+    fn raw_header(file_length_16_bit: i32) -> Vec<u8> {
+        let mut h = Vec::with_capacity(HEADER_SIZE as usize);
+        h.extend_from_slice(&FILE_CODE.to_be_bytes());
+        h.extend_from_slice(&[0u8; SIZE_OF_SKIP]);
+        h.extend_from_slice(&(ShapeType::Polygon as i32).to_be_bytes());
+        h.extend_from_slice(&1000i32.to_le_bytes()); // version
+        h.extend_from_slice(&shape_type.to_le_bytes());
+        h.extend_from_slice(&[0u8; 64]); // 8 x f64 bbox
+        assert_eq!(h.len(), HEADER_SIZE as usize);
+        h
+    }
+
     #[test]
     fn truncated_file_reports_one_error_and_stops() {
         // The header is entirely well formed and claims 1000 bytes; the file is
