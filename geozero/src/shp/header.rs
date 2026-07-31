@@ -228,7 +228,6 @@ mod tests {
         h
     }
 
-    
     #[test]
     fn file_length_shorter_than_the_header_is_rejected() {
         // Left unchecked these sign-extend to ~1.8e19 (negative) or claim a file
