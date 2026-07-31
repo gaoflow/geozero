@@ -288,7 +288,7 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-    use crate::shp::header::{HEADER_SIZE, ShapeType, raw_header};
+    use crate::shp::header::{HEADER_SIZE, ShapeType};
     use crate::{ColumnValue, ProcessorSink, PropertyProcessor, error::GeozeroError};
 
     const POLY_SHP: &str = "./tests/data/shp/poly.shp";
@@ -357,9 +357,9 @@ mod tests {
         let mut h = Vec::with_capacity(HEADER_SIZE as usize);
         h.extend_from_slice(&FILE_CODE.to_be_bytes());
         h.extend_from_slice(&[0u8; SIZE_OF_SKIP]);
-        h.extend_from_slice(&(ShapeType::Polygon as i32).to_be_bytes());
+        h.extend_from_slice(&file_length_16_bit.to_be_bytes());
         h.extend_from_slice(&1000i32.to_le_bytes()); // version
-        h.extend_from_slice(&shape_type.to_le_bytes());
+        h.extend_from_slice(&(ShapeType::Polygon as i32).to_le_bytes());
         h.extend_from_slice(&[0u8; 64]); // 8 x f64 bbox
         assert_eq!(h.len(), HEADER_SIZE as usize);
         h
@@ -369,15 +369,12 @@ mod tests {
     fn truncated_file_reports_one_error_and_stops() {
         // The header is entirely well formed and claims 1000 bytes; the file is
         // the 100-byte header alone. Every truncated download looks like this.
-        assert_eq!(
-            geometries(raw_header(500, ShapeType::Polygon as i32)),
-            (0, 1)
-        );
+        assert_eq!(geometries(raw_header(500)), (0, 1));
     }
 
     #[test]
     fn truncation_after_a_valid_record_reports_one_error_and_stops() {
-        let mut bytes = raw_header(5000, ShapeType::Point as i32);
+        let mut bytes = raw_header(5000);
         bytes.extend(shape_record(1, 10, &point_body(1.0, 2.0)));
         assert_eq!(geometries(bytes), (1, 1));
     }
@@ -386,32 +383,26 @@ mod tests {
     fn invalid_shape_type_reports_one_error_and_stops() {
         let mut body = 60i32.to_le_bytes().to_vec(); // not a ShapeType
         body.extend_from_slice(&[0u8; 16]);
-        let mut bytes = raw_header(5000, ShapeType::Polygon as i32);
+        let mut bytes = raw_header(5000);
         bytes.extend(shape_record(1, 10, &body));
         assert_eq!(geometries(bytes), (0, 1));
     }
 
     #[test]
     fn negative_record_size_is_rejected_not_panicked() {
-        let mut bytes = raw_header(5000, ShapeType::Polygon as i32);
+        let mut bytes = raw_header(5000);
         bytes.extend(shape_record(1, -1, &[0u8; 32]));
         assert_eq!(geometries(bytes), (0, 1));
     }
 
     #[test]
     fn huge_file_length_does_not_overflow_the_iteration_extent() {
-        assert_eq!(
-            geometries(raw_header(i32::MAX, ShapeType::Polygon as i32)),
-            (0, 1)
-        );
+        assert_eq!(geometries(raw_header(i32::MAX)), (0, 1));
     }
 
     #[test]
     fn header_only_file_yields_no_geometries() {
-        assert_eq!(
-            geometries(raw_header(HEADER_SIZE / 2, ShapeType::Polygon as i32)),
-            (0, 0)
-        );
+        assert_eq!(geometries(raw_header(HEADER_SIZE / 2)), (0, 0));
     }
 
     #[test]
@@ -419,10 +410,7 @@ mod tests {
         let records: Vec<u8> = (1..=3)
             .flat_map(|n| shape_record(n, 10, &point_body(f64::from(n), 2.0)))
             .collect();
-        let mut bytes = raw_header(
-            words(HEADER_SIZE as usize + records.len()),
-            ShapeType::Point as i32,
-        );
+        let mut bytes = raw_header(words(HEADER_SIZE as usize + records.len()));
         bytes.extend(records);
         assert_eq!(geometries(bytes), (3, 0));
     }

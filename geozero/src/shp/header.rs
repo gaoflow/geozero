@@ -7,9 +7,9 @@ use crate::shp::Error;
 use crate::shp::point_z::BBoxZ;
 
 pub(crate) const HEADER_SIZE: i32 = 100;
-const FILE_CODE: i32 = 9994;
+pub(crate) const FILE_CODE: i32 = 9994;
 /// Size of reserved bytes in the header, that have do defined use
-const SIZE_OF_SKIP: usize = size_of::<i32>() * 5;
+pub(crate) const SIZE_OF_SKIP: usize = size_of::<i32>() * 5;
 
 /// struct representing the Header of a shapefile
 /// can be retrieved via the reader used to read
@@ -220,9 +220,9 @@ mod tests {
         let mut h = Vec::with_capacity(HEADER_SIZE as usize);
         h.extend_from_slice(&FILE_CODE.to_be_bytes());
         h.extend_from_slice(&[0u8; SIZE_OF_SKIP]);
-        h.extend_from_slice(&(ShapeType::Polygon as i32).to_be_bytes());
+        h.extend_from_slice(&file_length_16_bit.to_be_bytes());
         h.extend_from_slice(&1000i32.to_le_bytes()); // version
-        h.extend_from_slice(&shape_type.to_le_bytes());
+        h.extend_from_slice(&(ShapeType::Polygon as i32).to_le_bytes());
         h.extend_from_slice(&[0u8; 64]); // 8 x f64 bbox
         assert_eq!(h.len(), HEADER_SIZE as usize);
         h
