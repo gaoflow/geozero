@@ -81,21 +81,6 @@ impl Header {
     }
 }
 
-/// A well-formed 100-byte main header with a caller-chosen `file_length`, for
-/// tests that need the readers to accept the header and then hit the record loop.
-#[cfg(test)]
-pub(crate) fn raw_header(file_length_16_bit: i32, shape_type: i32) -> Vec<u8> {
-    let mut h = Vec::with_capacity(HEADER_SIZE as usize);
-    h.extend_from_slice(&FILE_CODE.to_be_bytes());
-    h.extend_from_slice(&[0u8; SIZE_OF_SKIP]);
-    h.extend_from_slice(&file_length_16_bit.to_be_bytes());
-    h.extend_from_slice(&1000i32.to_le_bytes()); // version
-    h.extend_from_slice(&shape_type.to_le_bytes());
-    h.extend_from_slice(&[0u8; 64]); // 8 x f64 bbox
-    assert_eq!(h.len(), HEADER_SIZE as usize);
-    h
-}
-
 /// The enum for the ShapeType as defined in the
 /// specification
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -230,13 +215,27 @@ mod tests {
         assert!(Header::read_from(&mut src).is_err());
     }
 
+    /// A well-formed 100-byte main header with a caller-chosen `file_length`
+    fn raw_header(file_length_16_bit: i32) -> Vec<u8> {
+        let mut h = Vec::with_capacity(HEADER_SIZE as usize);
+        h.extend_from_slice(&FILE_CODE.to_be_bytes());
+        h.extend_from_slice(&[0u8; SIZE_OF_SKIP]);
+        h.extend_from_slice(&(ShapeType::Polygon as i32).to_be_bytes());
+        h.extend_from_slice(&1000i32.to_le_bytes()); // version
+        h.extend_from_slice(&shape_type.to_le_bytes());
+        h.extend_from_slice(&[0u8; 64]); // 8 x f64 bbox
+        assert_eq!(h.len(), HEADER_SIZE as usize);
+        h
+    }
+
+    
     #[test]
     fn file_length_shorter_than_the_header_is_rejected() {
         // Left unchecked these sign-extend to ~1.8e19 (negative) or claim a file
         // that ends inside its own header, both of which the readers turn into a
         // bogus iteration extent / record count.
         for file_length in [i32::MIN, -1, 0, 1, HEADER_SIZE / 2 - 1] {
-            let bytes = raw_header(file_length, ShapeType::Polygon as i32);
+            let bytes = raw_header(file_length);
             assert!(
                 Header::read_from(&mut bytes.as_slice()).is_err(),
                 "file_length {file_length} should be rejected"
@@ -247,7 +246,7 @@ mod tests {
     #[test]
     fn header_only_file_length_is_accepted() {
         // 50 words = the 100-byte header exactly: a valid, empty shapefile.
-        let bytes = raw_header(HEADER_SIZE / 2, ShapeType::Polygon as i32);
+        let bytes = raw_header(HEADER_SIZE / 2);
         let hdr = Header::read_from(&mut bytes.as_slice()).unwrap();
         assert_eq!(hdr.file_length, HEADER_SIZE / 2);
         assert_eq!(hdr.shape_type, ShapeType::Polygon);
