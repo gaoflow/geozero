@@ -16,10 +16,7 @@ pub struct ShapeIterator<'a, P: GeomProcessor, T: Read> {
     source: T,
     current_pos: usize,
     file_length: usize,
-    /// Set once an error has been yielded. `current_pos` only advances over a
-    /// record that was read in full, so after a failure the byte stream is
-    /// desynchronised and there is nothing left to resume from.
-    done: bool,
+    encountered_error: bool,
 }
 
 impl<P: GeomProcessor, T: Read> ShapeIterator<'_, P, T> {
@@ -44,11 +41,11 @@ impl<'a, P: GeomProcessor, T: Read + 'a> Iterator for ShapeIterator<'a, P, T> {
     type Item = Result<(), Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done || self.current_pos >= self.file_length {
+        if self.encountered_error || self.current_pos >= self.file_length {
             return None;
         }
         let result = self.read_record();
-        self.done = result.is_err();
+        self.encountered_error = result.is_err();
         Some(result)
     }
 }
@@ -59,10 +56,7 @@ pub struct ShapeRecordIterator<'a, P: FeatureProcessor, T: Read + Seek> {
     shape_iter: ShapeIterator<'a, P, T>,
     dbf_reader: dbase::Reader<T>,
     featno: u64,
-    /// Set once the iterator is finished, so `dataset_end` is emitted exactly
-    /// once and a failed feature is not retried against a stream that has
-    /// already moved on. See [`ShapeIterator::done`].
-    done: bool,
+    encountered_error: bool,
 }
 
 pub struct ShapeRecord {
@@ -73,23 +67,20 @@ impl<'a, P: FeatureProcessor, T: Read + Seek + 'a> Iterator for ShapeRecordItera
     type Item = Result<ShapeRecord, Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
+        if self.encountered_error {
             return None;
         }
         if self.featno == 0 {
             self.shape_iter.processor.dataset_begin(None).ok();
         }
-        // Stop on shape-file EOF: since dbase 0.8 the dbf record iterator no
-        // longer returns None at EOF, so it can't drive termination here.
+        // dbf record iterator does not return None at EOF, so can't drive termination
         if self.shape_iter.current_pos >= self.shape_iter.file_length {
-            self.done = true;
             self.shape_iter.processor.dataset_end().ok();
             return None;
         }
         let result = self.read_feature();
-        // Any error is terminal: the shape stream, the dbf stream and the
-        // processor's event stream are all left mid-feature.
-        self.done = !matches!(result, Some(Ok(_)));
+        // shape stream, dbf stream and the processor's event stream are all left mid-feature.
+        self.encountered_error = !matches!(result, Some(Ok(_)));
         result
     }
 }
@@ -195,12 +186,8 @@ impl<T: Read + Seek> ShpReader<T> {
             processor,
             source: self.source,
             current_pos: header::HEADER_SIZE as usize,
-            // `file_length` is in 16-bit words. Double it in `usize`: doing it in
-            // `i32` overflows for a header claiming close to `i32::MAX` words, and
-            // this method has no way to report that. `Header::read_from` has
-            // already rejected values below the header size, so the cast is sound.
             file_length: (self.header.file_length as usize).saturating_mul(2),
-            done: false,
+            encountered_error: false,
         }
     }
 
@@ -220,7 +207,7 @@ impl<T: Read + Seek> ShpReader<T> {
                 shape_iter,
                 dbf_reader,
                 featno: 0,
-                done: false,
+                encountered_error: false,
             })
         } else {
             Err(Error::MissingDbf)
@@ -406,7 +393,6 @@ mod tests {
 
     #[test]
     fn negative_record_size_is_rejected_not_panicked() {
-        // `record_size as usize * 2` overflows on a negative size.
         let mut bytes = raw_header(5000, ShapeType::Polygon as i32);
         bytes.extend(shape_record(1, -1, &[0u8; 32]));
         assert_eq!(geometries(bytes), (0, 1));
@@ -414,8 +400,6 @@ mod tests {
 
     #[test]
     fn huge_file_length_does_not_overflow_the_iteration_extent() {
-        // `file_length * 2` overflows if it is done in i32, and `iter_geometries`
-        // has no way to report that.
         assert_eq!(
             geometries(raw_header(i32::MAX, ShapeType::Polygon as i32)),
             (0, 1)
@@ -445,8 +429,6 @@ mod tests {
 
     #[test]
     fn truncated_shp_stops_the_feature_iterator() {
-        // The crate's own documented entry point (`iter_features(..)?.count()`)
-        // against a truncated copy of the poly fixture.
         let shp = std::fs::read(POLY_SHP).unwrap();
         let dbf = std::fs::read(POLY_DBF).unwrap();
         assert_eq!(features(shp[..600].to_vec(), dbf), (1, 1));
