@@ -73,7 +73,11 @@ fn read_shape_rec<P: GeomProcessor, T: Read>(
         ShapeType::Multipatch => {
             read_multipatch_shape_content(processor, &mut source, record_size)?
         }
-        ShapeType::NullShape => {}
+        ShapeType::NullShape => {
+            if record_size != 0 {
+                return Err(Error::InvalidShapeRecordSize);
+            }
+        }
     };
     Ok(())
 }

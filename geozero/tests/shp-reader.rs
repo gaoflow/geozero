@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Cursor};
 use std::str::from_utf8;
 
 use dbase::FieldValue;
@@ -7,6 +7,68 @@ use geozero::geojson::GeoJsonWriter;
 use geozero::shp::ShpReader;
 use geozero::wkt::WktWriter;
 use geozero::{CoordDimensions, FeatureProperties, ProcessorSink};
+
+fn shape_record(number: i32, size_16_bit: i32, body: &[u8]) -> Vec<u8> {
+    let mut record = number.to_be_bytes().to_vec();
+    record.extend_from_slice(&size_16_bit.to_be_bytes());
+    record.extend_from_slice(body);
+    record
+}
+
+fn point_body(x: f64, y: f64) -> Vec<u8> {
+    let mut body = (geozero::shp::ShapeType::Point as i32)
+        .to_le_bytes()
+        .to_vec();
+    body.extend_from_slice(&x.to_le_bytes());
+    body.extend_from_slice(&y.to_le_bytes());
+    body
+}
+
+fn shp_header(file_length_16_bit: i32) -> Vec<u8> {
+    let mut header = Vec::with_capacity(100);
+    header.extend_from_slice(&9994i32.to_be_bytes());
+    header.extend_from_slice(&[0; 20]);
+    header.extend_from_slice(&file_length_16_bit.to_be_bytes());
+    header.extend_from_slice(&1000i32.to_le_bytes());
+    header.extend_from_slice(&(geozero::shp::ShapeType::NullShape as i32).to_le_bytes());
+    header.extend_from_slice(&[0; 64]);
+    assert_eq!(header.len(), 100);
+    header
+}
+
+fn null_shape_then_point(null_size_16_bit: i32) -> Vec<u8> {
+    let null_shape = (geozero::shp::ShapeType::NullShape as i32).to_le_bytes();
+    let first = shape_record(1, null_size_16_bit, &null_shape);
+    let second = shape_record(2, 10, &point_body(3.0, 4.0));
+    let mut shp = shp_header(((100 + first.len() + second.len()) / 2) as i32);
+    shp.extend(first);
+    shp.extend(second);
+    shp
+}
+
+#[test]
+fn null_shape_record_size_must_match_its_four_byte_body() {
+    let mut sink = ProcessorSink::new();
+    let reader = ShpReader::new(Cursor::new(null_shape_then_point(2))).unwrap();
+    let mut records = reader.iter_geometries(&mut sink);
+    assert!(records.next().unwrap().is_ok());
+    assert!(records.next().unwrap().is_ok());
+    assert!(records.next().is_none());
+
+    for size_16_bit in [3, 8, 20, 1000] {
+        let mut sink = ProcessorSink::new();
+        let reader = ShpReader::new(Cursor::new(null_shape_then_point(size_16_bit))).unwrap();
+        let mut records = reader.iter_geometries(&mut sink);
+        assert!(
+            matches!(
+                records.next(),
+                Some(Err(geozero::shp::Error::InvalidShapeRecordSize))
+            ),
+            "NullShape record with declared size {size_16_bit} must be rejected"
+        );
+        assert!(records.next().is_none());
+    }
+}
 
 #[test]
 fn read_header() {
