@@ -7,6 +7,7 @@ use geozero::geojson::GeoJsonWriter;
 use geozero::shp::ShpReader;
 use geozero::wkt::WktWriter;
 use geozero::{CoordDimensions, FeatureProperties, ProcessorSink};
+use rstest::rstest;
 
 fn shape_record(number: i32, size_16_bit: i32, body: &[u8]) -> Vec<u8> {
     let mut record = number.to_be_bytes().to_vec();
@@ -54,20 +55,25 @@ fn null_shape_record_size_must_match_its_four_byte_body() {
     assert!(records.next().unwrap().is_ok());
     assert!(records.next().unwrap().is_ok());
     assert!(records.next().is_none());
+}
 
-    for size_16_bit in [3, 8, 20, 1000] {
-        let mut sink = ProcessorSink::new();
-        let reader = ShpReader::new(Cursor::new(null_shape_then_point(size_16_bit))).unwrap();
-        let mut records = reader.iter_geometries(&mut sink);
-        assert!(
-            matches!(
-                records.next(),
-                Some(Err(geozero::shp::Error::InvalidShapeRecordSize))
-            ),
-            "NullShape record with declared size {size_16_bit} must be rejected"
-        );
-        assert!(records.next().is_none());
-    }
+#[rstest]
+#[case::just_over(3)]
+#[case::double(8)]
+#[case::way_over(20)]
+#[case::wildly_over(1000)]
+fn null_shape_record_with_wrong_size_is_rejected(#[case] size_16_bit: i32) {
+    let mut sink = ProcessorSink::new();
+    let reader = ShpReader::new(Cursor::new(null_shape_then_point(size_16_bit))).unwrap();
+    let mut records = reader.iter_geometries(&mut sink);
+    assert!(
+        matches!(
+            records.next(),
+            Some(Err(geozero::shp::Error::InvalidShapeRecordSize))
+        ),
+        "NullShape record with declared size {size_16_bit} must be rejected"
+    );
+    assert!(records.next().is_none());
 }
 
 #[test]
