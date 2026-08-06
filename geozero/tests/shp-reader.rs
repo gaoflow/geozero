@@ -414,8 +414,6 @@ fn polygonzm() -> Result<(), geozero::shp::Error> {
 // so a tiny malformed record returns `Err` instead of panicking (`capacity overflow`
 // / debug int-overflow) or requesting a multi-GB allocation.
 
-use std::io::Cursor;
-
 /// Build a valid 100-byte shapefile main header so `ShpReader::new` accepts the
 /// stream; `file_length_words` is the (attacker-controlled) file-length field.
 fn shp_main_header(file_length_words: i32) -> Vec<u8> {
